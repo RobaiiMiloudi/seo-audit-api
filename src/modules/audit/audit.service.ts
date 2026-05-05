@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { auditQueue } from '../../queue/client.js';
 import { createPendingAudit, getAuditById } from './audit.repository.js';
-import { AuditRequest } from './audit.schema.js';
-import { AuditResponse } from '../../types/index.js';
+import type { AuditRequest } from './audit.schema.js';
+import type { AuditResponse } from './audit.types.js';
 
 export async function enqueueAudit(data: AuditRequest): Promise<{ jobId: string }> {
   // Use crypto for a quick UUID (node:crypto)

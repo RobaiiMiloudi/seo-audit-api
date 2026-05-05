@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { connection } from './client.js';
 import { processAuditJob } from './jobs/auditJob.js';
-import { AuditJobData } from '../types/index.js';
+import type { AuditJobData } from '../modules/audit/audit.types.js';
 
 export const auditWorker = new Worker<AuditJobData>(
   'audit',

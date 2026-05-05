@@ -1,6 +1,6 @@
 // src/lib/scanner/extractSocial.ts
 import * as cheerio from 'cheerio';
-import { SocialReport } from '../../types';
+import type { SocialReport } from '../../modules/scraper/index.js';
 
 export function getSocialData(html: string): SocialReport {
   const $ = cheerio.load(html);

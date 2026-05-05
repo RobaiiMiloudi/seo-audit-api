@@ -1,5 +1,5 @@
 import { db } from '../../db/client.js';
-import { AuditResultRecord } from '../../types/index.js';
+import type { AuditResultRecord, AuditStatus } from './audit.types.js';
 
 export function createPendingAudit(id: string, url: string): void {
   const stmt = db.prepare('INSERT INTO audit_results (id, url, status) VALUES (?, ?, ?)');
@@ -21,8 +21,7 @@ export function getAuditById(id: string): AuditResultRecord | undefined {
   return stmt.get(id) as AuditResultRecord | undefined;
 }
 
-export function updateAuditProgress(id: string, status: string, result: any): void {
+export function updateAuditProgress(id: string, status: AuditStatus, result: any): void {
   const stmt = db.prepare('UPDATE audit_results SET status = ?, result = ?, updated_at = unixepoch() WHERE id = ?');
   stmt.run(status, JSON.stringify(result), id);
 }
-

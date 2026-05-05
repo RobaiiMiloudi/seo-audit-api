@@ -1,6 +1,6 @@
 // src/lib/scanner/extractTechnical.ts
 import * as cheerio from 'cheerio';
-import { TechnicalReport } from '../../types';
+import type { TechnicalReport } from '../../modules/scraper/index.js';
 
 export function getTechnicalData(html: string, url: string): TechnicalReport {
   const $ = cheerio.load(html);

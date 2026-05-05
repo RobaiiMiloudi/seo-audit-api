@@ -1,7 +1,7 @@
 // src/lib/scanner/parser.ts
 import * as cheerio from 'cheerio';
 import { chromium } from 'playwright';
-import { ScrapeResult, ContentStructureReport, ImageReport, LinkReport, SocialReport } from '../../types';
+import type { ScrapeResult, ContentStructureReport, ImageReport, LinkReport, SocialReport } from '../../modules/scraper/index.js';
 
 // Import our specialist extractors!
 import { getMetaData } from './extractMetaData';

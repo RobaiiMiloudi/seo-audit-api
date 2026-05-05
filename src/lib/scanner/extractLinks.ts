@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { LinkReport, LinkItem } from '../../types';
+import type { LinkReport, LinkItem } from '../../modules/scraper/index.js';
 
 // ==========================================
 // THE EXTRACTOR FUNCTION

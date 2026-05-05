@@ -40,3 +40,7 @@ ObsNote/
 
 # Test outputs
 result.json
+
+graphify-out/
+
+*.log

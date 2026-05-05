@@ -1,6 +1,6 @@
 // src/lib/scanner/extractMetaData.ts
 import * as cheerio from 'cheerio';
-import { MetaDataReport } from '../../types';
+import type { MetaDataReport } from '../../modules/scraper/index.js';
 
 export function getMetaData(html: string, currentUrl: string): MetaDataReport {
   const $ = cheerio.load(html);

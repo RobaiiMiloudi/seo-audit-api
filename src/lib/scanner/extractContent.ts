@@ -1,6 +1,6 @@
 // src/lib/scanner/extractContent.ts
 import * as cheerio from 'cheerio';
-import { ContentStructureReport, HeadingItem } from '../../types';
+import type { ContentStructureReport, HeadingItem } from '../../modules/scraper/index.js';
 
 export function getContentStructure(html: string): ContentStructureReport {
   const $ = cheerio.load(html);

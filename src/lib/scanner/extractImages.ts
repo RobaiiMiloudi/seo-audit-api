@@ -1,6 +1,6 @@
 // src/lib/scanner/extractImages.ts
 import * as cheerio from 'cheerio';
-import { ImageReport, ImageIssue } from '../../types';
+import type { ImageReport, ImageIssue } from '../../modules/scraper/index.js';
 
 export function getImages(html: string): ImageReport {
   const $ = cheerio.load(html);
