@@ -1,15 +1,30 @@
 # SEO Audit API
+
 High-performance asynchronous SEO auditing microservice.
 
 ## What it does
-The SEO Audit API is a background-processing tool that crawls and analyzes web pages for SEO compliance. It extracts meta tags, analyzes content structure (like H1s and headings), checks image alt attributes, parses social tags (OpenGraph, Twitter Cards), and verifies technical data such as reachability. Because deep site audits can take several minutes to complete, this API uses an asynchronous job queue pattern—returning a tracking ID immediately while the heavy lifting happens in the background.
+
+The SEO Audit API queues website audits, processes them in a background worker, and returns structured SEO reports through a polling API or CLI. It extracts page metadata, content structure, image data, links, social tags, technical signals, and performance metrics, then calculates an SEO score with actionable suggestions.
+
+The service is intentionally split into focused modules:
+
+- `audit` owns the audit workflow, scoring, report meaning, and persistence contract.
+- `scraper` owns reusable page extraction.
+- `performance` owns PageSpeed/Lighthouse analysis.
+- `queue` owns BullMQ background execution.
+- `db` owns local SQLite persistence.
+- `plugins` owns Fastify infrastructure concerns.
+
+See [docs/architecture.md](docs/architecture.md) for the full module design.
 
 ## Prerequisites
+
 - Node.js 20+
-- Docker (for running the Redis container)
+- Docker, for Redis
 - Git
 
 ## Installation
+
 ```bash
 git clone <repository-url>
 cd seo-audit-tool
@@ -18,38 +33,56 @@ cp .env.example .env
 ```
 
 ## Running Redis
+
 ```bash
 docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
 ```
 
 ## Running the API
+
+Run the API and worker in separate terminals:
+
 ```bash
 npm run dev
 ```
 
-## Running the Worker
 ```bash
 npm run dev:worker
 ```
-*Note: The API handles HTTP requests and enqueues jobs, while the worker process runs the background scraping tasks. Both must be running simultaneously for audits to process.*
 
-## Testing
-The project uses Vitest for extremely fast, zero-config unit testing.
-```bash
-# Run all tests once (ideal for CI/CD)
-npm run test
+On Windows PowerShell, use `npm.cmd` if script execution policy blocks `npm`:
 
-# Run tests in watch mode (ideal for active development)
-npm run test:watch
+```powershell
+npm.cmd run dev
+npm.cmd run dev:worker
 ```
-*Note: Unit tests test the core scanner logic and do not require the API or Worker to be running.*
 
-## CLI Access (System-to-System)
-If you have another service or script that needs to programmatically run an audit and capture the JSON result without writing custom polling logic, you can use the built-in CLI script:
+The API receives HTTP requests and enqueues jobs. The worker processes queued audits. Both must be running for audits to complete.
+
+## CLI Access
+
+The CLI submits an audit to the API, polls until completion, writes progress logs to `stderr`, and prints the final report JSON to `stdout`.
+
 ```bash
 npx tsx scripts/cli.ts --url https://example.com
 ```
-*This script will stream progress logs to `stderr` and print the final JSON result strictly to `stdout`, making it perfectly clean for parsing in Python, Go, PHP, or bash scripts.*
+
+On Windows PowerShell:
+
+```powershell
+npx.cmd tsx scripts/cli.ts --url https://example.com
+```
+
+The CLI requires Redis, the API server, and the worker to be running.
+
+## Testing
+
+```bash
+npm run build
+npm run test
+```
+
+Unit tests focus on extraction logic and do not require the API, worker, Redis, or SQLite service processes to be running. The test script excludes `dist/` so compiled build output does not get picked up as test input.
 
 ## API Endpoints
 
@@ -59,61 +92,75 @@ npx tsx scripts/cli.ts --url https://example.com
 | GET | `/api/audit/:jobId` | Poll the status and result of an audit |
 
 ### Request an Audit
+
 ```bash
 curl -X POST http://localhost:3000/api/audit \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com", "depth": 1}'
 ```
+
 Response:
+
 ```json
 {
   "jobId": "12345-abcde"
 }
 ```
 
-### Poll Audit Status (Polling Loop Example)
+### Poll Audit Status
+
 ```bash
 JOB_ID="12345-abcde"
 STATUS="pending"
 
-while [ "$STATUS" = "pending" ] || [ "$STATUS" = "active" ]; do
+while [ "$STATUS" = "pending" ] || [ "$STATUS" = "scraping" ] || [ "$STATUS" = "analyzing_performance" ]; do
   RESPONSE=$(curl -s http://localhost:3000/api/audit/$JOB_ID)
   STATUS=$(echo $RESPONSE | jq -r .status)
-  
+
   if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
     echo $RESPONSE | jq .
     break
   fi
-  
+
   echo "Job $STATUS. Waiting 3 seconds..."
   sleep 3
 done
 ```
 
 ## Folder Structure
-```
+
+```text
 seo-audit-tool/
-├── src/
-│   ├── modules/       # Domain-specific logic (e.g., audit route, service, repository)
-│   ├── plugins/       # Fastify plugins (cors, swagger, sensible, rateLimit)
-│   ├── queue/         # BullMQ queue and worker configuration
-│   ├── lib/           # Core libraries and scraping engine logic
-│   ├── types/         # Global TypeScript interfaces and types
-│   └── app.ts         # Fastify application assembly
-├── docs/              # Project documentation
-└── package.json       # Project dependencies and scripts
+|-- src/
+|   |-- modules/
+|   |   |-- audit/        # Audit workflow, scoring, report types, repository
+|   |   |-- scraper/      # Public page scraping API and scraper-owned types
+|   |   `-- performance/  # PageSpeed/Lighthouse analysis
+|   |-- lib/scanner/      # Scanner internals and extractors
+|   |-- queue/            # BullMQ queue and worker configuration
+|   |-- db/               # SQLite client and schema initialization
+|   |-- plugins/          # Fastify plugins
+|   |-- types/            # Compatibility re-exports for shared imports
+|   `-- app.ts            # Fastify application assembly
+|-- docs/                 # Project documentation
+`-- package.json
 ```
 
 ## Tech Stack
 
 | Tool | Purpose |
 |---|---|
-| Fastify | High-performance HTTP server |
-| TypeScript | Type safety and developer experience |
-| BullMQ | Reliable job queuing and background processing |
-| Redis | Fast in-memory storage for the job queue |
-| better-sqlite3 | Persistent local database for audit results |
-| Zod | Schema validation and type inference |
+| Fastify | HTTP server |
+| TypeScript | Type safety |
+| BullMQ | Job queue |
+| Redis | Queue backend |
+| better-sqlite3 | Local audit persistence |
+| Cheerio | Static HTML parsing |
+| Playwright | Dynamic page rendering fallback |
+| Google PageSpeed API | Performance metrics |
+| Zod | Request validation and OpenAPI schemas |
+| Vitest | Unit testing |
 
 ## License
+
 MIT License

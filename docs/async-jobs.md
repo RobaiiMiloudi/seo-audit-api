@@ -1,65 +1,92 @@
 # Async Jobs Pattern
 
 ## Why async?
-SEO audits process significant amounts of data. The API must scrape target pages, extract assets, and analyze structure. Depending on the depth of the crawl and target site speeds, this process can take anywhere from 30 seconds to several minutes. A standard synchronous HTTP request would simply time out. The asynchronous pattern solves this by returning a tracking ID immediately, allowing the server to do the heavy lifting in the background while the client checks back for the result.
 
-## The Full Flow
+SEO audits include page scraping, extraction, performance analysis, scoring, and persistence. These steps can take long enough that a single synchronous HTTP request would be fragile. The asynchronous pattern returns a `jobId` immediately, then lets a background worker finish the audit while the client polls for status.
+
+## Full Flow
 
 ```text
-Client → POST /api/audit → API returns jobId (instant)
-                                   ↓
-                             Job added to Redis queue
-                                   ↓
-                          Worker picks up job (background)
-                                   ↓
-                          Scraper runs (30s - 3min)
-                                   ↓
-                          Result saved to SQLite
-                                   ↓
-Client → GET /api/audit/:jobId → returns completed result
+Client -> POST /api/audit -> API returns jobId
+                                  |
+                                  v
+                         Job added to Redis queue
+                                  |
+                                  v
+                         Worker picks up job
+                                  |
+                                  v
+             scraper.scrapePage + performance.analyzePagePerformance
+                                  |
+                                  v
+                         audit.scoreAudit
+                                  |
+                                  v
+                         Result saved to SQLite
+                                  |
+                                  v
+Client -> GET /api/audit/:jobId -> returns status/result
 ```
+
+## Module Responsibilities
+
+| Module | Responsibility |
+|---|---|
+| `audit.route.ts` | Accepts HTTP requests and returns HTTP responses |
+| `audit.service.ts` | Creates audit jobs and reads audit status |
+| `audit.repository.ts` | Saves and loads audit records |
+| `queue/client.ts` | Configures the BullMQ queue connection |
+| `queue/worker.ts` | Starts the worker process |
+| `queue/jobs/auditJob.ts` | Orchestrates each audit job |
+| `scraper` | Extracts page data |
+| `performance` | Fetches PageSpeed/Lighthouse metrics |
+| `audit.scorer.ts` | Calculates score, grade, and suggestions |
 
 ## Job Status Reference
 
 | Status | Meaning | What to do |
 |---|---|---|
 | `pending` | Waiting in queue | Keep polling |
-| `active` | Worker is scraping | Keep polling |
+| `scraping` | Worker is collecting page data | Keep polling |
+| `analyzing_performance` | Partial scrape result is saved while performance analysis continues | Keep polling |
 | `completed` | Done | Read the `result` field |
 | `failed` | Error occurred | Read the `error` field |
 
 ## Polling Best Practices
-- Poll every 3–5 seconds
-- Never poll faster than every 2 seconds to avoid overwhelming the server
-- Stop polling immediately when status is `completed` or `failed`
-- Set a maximum timeout on the client side (e.g. 5 minutes) so your client doesn't loop forever
+
+- Poll every 3-5 seconds.
+- Do not poll faster than every 2 seconds.
+- Stop polling immediately when status is `completed` or `failed`.
+- Set a client-side timeout, such as 5 minutes.
 
 ## Code Examples
 
-### bash (curl)
+### Bash
+
 ```bash
 JOB_ID="your-job-id"
 STATUS="pending"
 
-while [ "$STATUS" = "pending" ] || [ "$STATUS" = "active" ]; do
+while [ "$STATUS" = "pending" ] || [ "$STATUS" = "scraping" ] || [ "$STATUS" = "analyzing_performance" ]; do
   RESPONSE=$(curl -s http://localhost:3000/api/audit/$JOB_ID)
   STATUS=$(echo $RESPONSE | jq -r .status)
-  
+
   if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
     echo "Done! Result:"
     echo $RESPONSE | jq .
     break
   fi
-  
+
   echo "Status: $STATUS. Checking again in 3 seconds..."
   sleep 3
 done
 ```
 
-### JavaScript (fetch)
+### JavaScript
+
 ```javascript
 async function pollAudit(jobId) {
-  const maxPollTime = 5 * 60 * 1000; // 5 minutes
+  const maxPollTime = 5 * 60 * 1000;
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -80,17 +107,17 @@ async function pollAudit(jobId) {
           clearInterval(interval);
           reject(new Error(data.error));
         }
-        // If pending or active, do nothing and wait for next interval
       } catch (err) {
         clearInterval(interval);
         reject(err);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000);
   });
 }
 ```
 
-### Python (requests)
+### Python
+
 ```python
 import requests
 import time
@@ -98,30 +125,30 @@ import time
 def poll_audit(job_id):
     url = f"http://localhost:3000/api/audit/{job_id}"
     max_retries = 100
-    
+
     for _ in range(max_retries):
         response = requests.get(url)
         data = response.json()
-        
         status = data.get("status")
-        
+
         if status == "completed":
             return data.get("result")
-        elif status == "failed":
+        if status == "failed":
             raise Exception(f"Job failed: {data.get('error')}")
-            
-        time.sleep(3) # Wait 3 seconds before polling again
-        
+
+        time.sleep(3)
+
     raise Exception("Polling timed out")
 ```
 
-### Node.js (Built-in CLI Script)
-If you are integrating with a system that can execute terminal commands (like a Python subprocess or a bash script), you don't need to write the polling logic from scratch! We provide a built-in CLI script.
+### Node.js CLI
+
 ```bash
-# Execute the script
 npx tsx scripts/cli.ts --url https://example.com
 ```
-*The script automatically handles the POST request and the polling loop. It writes status updates to `stderr` and prints the final JSON result to `stdout`.*
 
-## What to do when a job fails
-When a job fails, the `status` will be set to `"failed"` and an `error` field will be populated with the failure reason. This indicates the background job couldn't complete successfully. Once a job has failed, its state is final. To try again, you must submit a new `POST` request to receive a new `jobId`. See the Errors documentation for details on specific error strings.
+The CLI handles the POST and polling lifecycle. It writes progress updates to `stderr` and prints the final JSON result to `stdout`.
+
+## Failed Jobs
+
+When a job fails, `status` becomes `failed` and the `error` field contains the reason. Failed jobs are final. Submit a new `POST /api/audit` request to retry.
